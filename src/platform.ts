@@ -47,6 +47,8 @@ export class CeresHomebridgePlatform implements DynamicPlatformPlugin {
 
     // add the restored accessory to the accessories cache so we can track if it has already been registered
     this.accessories.push(accessory);
+
+    // Call mdnsServiceUp in case mDNS doesn't discover the accessory right away.
     this.mdnsServiceUp(accessory.context.service);
   }
 
@@ -68,25 +70,24 @@ export class CeresHomebridgePlatform implements DynamicPlatformPlugin {
     // the cached devices we stored in the `configureAccessory` method above
     const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
 
-    if (existingAccessory) {
-      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+    const ip = service.addresses[0];
 
-      // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-      // existingAccessory.context.device = device;
-      // this.api.updatePlatformAccessories([existingAccessory]);
+    // the accessory does not yet exist, so we need to create it
+    this.log.info(`Querying features of accessory ${service.host} at ${ip}`);
 
-      // create the accessory handler for the restored accessory
-      // this is imported from `platformAccessory.ts`
-      new CeresPlatformAccesory(this, existingAccessory);
+    axios.get(`http://${ip}/`).then(response => {
+      if (existingAccessory) {
+        this.log.info('Updating existing accessory from cache:', existingAccessory.displayName);
 
-      this.api.updatePlatformAccessories([existingAccessory]);
-    } else {
-      const ip = service.addresses[0];
+        // Update the features of the device
+        existingAccessory.context.service = service;
+        existingAccessory.context.status = response.data;
+        existingAccessory.context.ip = ip;
 
-      // the accessory does not yet exist, so we need to create it
-      this.log.info('Querying features of new accessory ', service.host, ' ip ', ip);
-
-      axios.get(`http://${ip}/`).then(response => {
+        // Create the accesory and update the context
+        new CeresPlatformAccesory(this, existingAccessory);
+        this.api.updatePlatformAccessories([existingAccessory]);
+      } else {
         // create a new accessory
         const accessory = new this.api.platformAccessory(service.name, uuid);
 
@@ -102,9 +103,9 @@ export class CeresHomebridgePlatform implements DynamicPlatformPlugin {
 
         // link the accessory to your platform
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-      }).catch(error => {
-        this.log.error('Cannot get features of ', ip, error);
-      });
-    }
+      }
+    }).catch(error => {
+      this.log.error('Cannot get features of ', ip, error);
+    });
   }
 }
