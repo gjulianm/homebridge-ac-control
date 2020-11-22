@@ -1,16 +1,16 @@
 {
   "private": true,
-  "displayName": "Plugin Name",
-  "name": "homebridge-plugin-name",
+  "displayName": "Homebridge plugin for ESP2866 Ceres nodes",
+  "name": "homebridge-ceres",
   "version": "1.0.0",
-  "description": "A short description about what your plugin does.",
+  "description": "Control of Ceres ESP2866 nodes",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "git://github.com/gjulianm/homebridge-ceres.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/gjulianm/homebridge-ceres/issues"
   },
   "engines": {
     "node": ">=10.17.0",
@@ -26,7 +26,12 @@
   "keywords": [
     "homebridge-plugin"
   ],
-  "dependencies": {},
+  "dependencies": {
+    "axios": "^0.19.0",
+    "bonjour-hap": "^3.5.11",
+    "mdns": "^2.5.1",
+    "mdns-js": "^1.0.3"
+  },
   "devDependencies": {
     "@types/node": "^14.10.3",
     "@typescript-eslint/eslint-plugin": "^4.1.1",

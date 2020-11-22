@@ -1,151 +1,196 @@
-import { Service, PlatformAccessory, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback } from 'homebridge';
+import { Service, PlatformAccessory, CharacteristicGetCallback, CharacteristicSetCallback } from 'homebridge';
 
-import { ExampleHomebridgePlatform } from './platform';
+import { CeresHomebridgePlatform } from './platform';
+
+import axios from 'axios';
 
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
  * Each accessory may expose multiple services of different service types.
  */
-export class ExamplePlatformAccessory {
-  private service: Service;
-
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
-  };
+export class CeresPlatformAccesory {
+  private acService: Service | null;
+  private humService: Service | null;
+  private tempService: Service | null;
 
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: CeresHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+    this.tempService = null;
+    this.acService = null;
+    this.humService = null;
 
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Custom-Made')
+      .setCharacteristic(this.platform.Characteristic.Model, 'ESP8266-Arduino')
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'esp8266');
 
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
-    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    if (this.accessory.context.status.features.temperature) {
+      this.configureTemperatureService();
+    }
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    if (this.accessory.context.status.features.humidity) {
+      this.configureHumidityService();
+    }
 
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
-
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .on('set', this.setOn.bind(this))                // SET - bind to the `setOn` method below
-      .on('get', this.getOn.bind(this));               // GET - bind to the `getOn` method below
-
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .on('set', this.setBrightness.bind(this));       // SET - bind to the 'setBrightness` method below
-
-
-    /**
-     * Creating multiple services of the same type.
-     * 
-     * To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-     * when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-     * this.accessory.getService('NAME') || this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE_ID');
-     * 
-     * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
-     * can use the same sub type id.)
-     */
-
-    // Example: add two "motion sensor" services to the accessory
-    const motionSensorOneService = this.accessory.getService('Motion Sensor One Name') ||
-      this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor One Name', 'YourUniqueIdentifier-1');
-
-    const motionSensorTwoService = this.accessory.getService('Motion Sensor Two Name') ||
-      this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor Two Name', 'YourUniqueIdentifier-2');
-
-    /**
-     * Updating characteristics values asynchronously.
-     * 
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     * 
-     */
-    let motionDetected = false;
-    setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      motionDetected = !motionDetected;
-
-      // push the new value to HomeKit
-      motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
-
-      this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
+    if (this.accessory.context.status.features.ac && this.accessory.context.status.features.temperature) {
+      this.configureAcService();
+    }
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  setOn(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+  configureTemperatureService() {
+    this.platform.log.info(`Configuring temperature service for ${this.accessory.displayName}`);
+    this.tempService = this.accessory.getService(this.platform.Service.TemperatureSensor) ||
+      this.accessory.addService(this.platform.Service.TemperatureSensor);
 
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
+    this.tempService.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .on('get', this.getTemperature.bind(this));
+  }
 
-    this.platform.log.debug('Set Characteristic On ->', value);
+  configureHumidityService() {
+    this.platform.log.info(`Configuring humidity service for ${this.accessory.displayName}`);
+    this.humService = this.accessory.getService(this.platform.Service.HumiditySensor) ||
+      this.accessory.addService(this.platform.Service.HumiditySensor);
 
-    // you must call the callback function
-    callback(null);
+    this.humService.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)
+      .on('get', this.getHumidity.bind(this));
+  }
+
+  configureAcService() {
+    this.platform.log.info(`Configuring AC service for ${this.accessory.displayName}`);
+
+    this.acService = this.accessory.getService(this.platform.Service.HeaterCooler) ||
+      this.accessory.addService(this.platform.Service.HeaterCooler);
+
+    this.acService.getCharacteristic(this.platform.Characteristic.Active)
+      .on('get', this.getAcVariable.bind(this, 'on'))
+      .on('set', this.setAcVariable.bind(this, 'on'));
+
+    this.acService.getCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState)
+	  .on('get', cb => this.getAcCoolingState('current', cb));
+
+    this.acService.getCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState)
+      .on('get', this.getAcCoolingState.bind(this, 'target'))
+      .on('set', this.setAcCoolingState.bind(this));
+
+    this.acService.getCharacteristic(this.platform.Characteristic.CurrentTemperature)
+      .on('get', this.getTemperature.bind(this));
+
+    this.acService.getCharacteristic(this.platform.Characteristic.SwingMode)
+      .on('get', this.getAcVariable.bind(this, 'swing'))
+      .on('set', this.setAcVariable.bind(this, 'swing'));
+
+    this.acService.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
+      .on('get', this.getAcVariable.bind(this, 'temp'))
+      .on('set', this.setAcVariable.bind(this, 'temp'));
+
+    this.acService.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature)
+      .on('get', this.getAcVariable.bind(this, 'temp'))
+      .on('set', this.setAcVariable.bind(this, 'temp'));
   }
 
   /**
    * Handle the "GET" requests from HomeKit
    * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   * 
+   *
    * GET requests should return as fast as possbile. A long delay here will result in
    * HomeKit being unresponsive and a bad user experience in general.
-   * 
+   *
    * If your device takes time to respond you should update the status of your device
    * asynchronously instead using the `updateCharacteristic` method instead.
 
    * @example
    * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
    */
-  getOn(callback: CharacteristicGetCallback) {
+  getTemperature(callback: CharacteristicGetCallback) {
+    axios.get(`http://${this.accessory.context.ip}/metrics`, { responseType: 'text' }).then(response => {
+      const match = response.data.match(/sensors_temperature{.*} +([0-9.]+)/m);
 
-    // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
+      if (match === null) {
+        callback(new Error('Cannot parse metrics result!'), null);
+      } else {
+        const value = match[1];
 
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    // you must call the callback function
-    // the first argument should be null if there were no errors
-    // the second argument should be the value to return
-    callback(null, isOn);
+        callback(null, parseFloat(value));
+      }
+    }).catch(() => {
+      callback(new Error('Cannot access metrics'), null);
+    });
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  setBrightness(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+  getHumidity(callback: CharacteristicGetCallback) {
+    axios.get(`http://${this.accessory.context.ip}/metrics`, { responseType: 'text' }).then(response => {
+      const match = response.data.match(/sensors_humidity{.*} +([0-9.]+)/m);
 
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
+      if (match === null) {
+        callback(new Error('Cannot parse metrics result!'), null);
+      } else {
+        const value = match[1];
 
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
-
-    // you must call the callback function
-    callback(null);
+        callback(null, parseFloat(value));
+      }
+    }).catch(() => {
+      callback(new Error('Cannot access metrics'), null);
+    });
   }
 
+  getAcVariable(variable: string, callback: CharacteristicGetCallback) {
+    this.platform.log.info(`Get ${variable} on ${this.accessory.context.ip}`);
+
+    axios.get(`http://${this.accessory.context.ip}/ac/status`, { responseType: 'text' }).then(response => {
+      callback(null, response.data[variable]);
+    }).catch(() => {
+      callback(new Error('Cannot get status'), null);
+    });
+  }
+
+  setAcVariable(variable: string, value, callback: CharacteristicSetCallback) {
+    const params = {};
+    params[variable] = value;
+    this.platform.log.info(`Set ${variable} to ${value} on ${this.accessory.context.ip}`);
+
+    axios.get(`http://${this.accessory.context.ip}/ac/control`, { params: params }).then(() => {
+      callback(null);
+    }).catch(() => {
+      callback(new Error('cannot set'));
+    });
+  }
+
+  // this one is a little bit different
+  getAcCoolingState(mode: string, callback: CharacteristicGetCallback) {
+	this.platform.log.info(`Get coolingState on ${this.accessory.context.ip} with`);
+
+    axios.get(`http://${this.accessory.context.ip}/ac/status`, { responseType: 'text' }).then(response => {
+      let value = 0;
+
+      if (!response.data.on) {
+        value = mode === 'current' ?
+          this.platform.Characteristic.CurrentHeaterCoolerState.INACTIVE :
+          this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
+      } else if (response.data.mode === 'heat') {
+        value = mode === 'current' ?
+          this.platform.Characteristic.CurrentHeaterCoolerState.HEATING :
+          this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
+      } else {
+        value = mode === 'current' ?
+          this.platform.Characteristic.CurrentHeaterCoolerState.COOLING :
+          this.platform.Characteristic.TargetHeaterCoolerState.COOL;
+      }
+
+      callback(null, value);
+    }).catch((e) => {
+      callback(new Error('Cannot get status'), null);
+    });
+  }
+
+  setAcCoolingState(value, callback: CharacteristicSetCallback) {
+    if (value === this.platform.Characteristic.TargetHeaterCoolerState.HEAT) {
+      this.setAcVariable('mode', 'heat', callback);
+    } else if (value === this.platform.Characteristic.TargetHeaterCoolerState.COOL) {
+      this.setAcVariable('mode', 'cool', callback);
+    }
+  }
 }
