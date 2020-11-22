@@ -138,11 +138,16 @@ export class CeresPlatformAccesory {
   }
 
   getAcVariable(variable: string, callback: CharacteristicGetCallback) {
-    this.platform.log.info(`Get ${variable} on ${this.accessory.context.ip}`);
+    this.platform.log.debug(`Get ${variable} on ${this.accessory.context.ip}`);
 
     axios.get(`http://${this.accessory.context.ip}/ac/status`, { responseType: 'text' }).then(response => {
+      const value = response.data[variable];
+
+      this.platform.log.debug(`Got ${value} for ${variable} on ${this.accessory.context.ip}`);
+
       callback(null, response.data[variable]);
-    }).catch(() => {
+    }).catch((err) => {
+      this.platform.log.error(`Cannot get variable ${variable} on ${this.accessory.context.ip}: error ${err}`);
       callback(new Error('Cannot get status'), null);
     });
   }
@@ -150,7 +155,7 @@ export class CeresPlatformAccesory {
   setAcVariable(variable: string, value, callback: CharacteristicSetCallback) {
     const params = {};
     params[variable] = value;
-    this.platform.log.info(`Set ${variable} to ${value} on ${this.accessory.context.ip}`);
+    this.platform.log.debug(`Set ${variable} to ${value} on ${this.accessory.context.ip}`);
 
     axios.get(`http://${this.accessory.context.ip}/ac/control`, { params: params }).then(() => {
       callback(null);
@@ -161,7 +166,7 @@ export class CeresPlatformAccesory {
 
   // this one is a little bit different
   getAcCoolingState(mode: string, callback: CharacteristicGetCallback) {
-	this.platform.log.info(`Get coolingState on ${this.accessory.context.ip} with`);
+    this.platform.log.debug(`Get coolingState on ${this.accessory.context.ip} with mode ${mode}`);
 
     axios.get(`http://${this.accessory.context.ip}/ac/status`, { responseType: 'text' }).then(response => {
       let value = 0;
@@ -182,11 +187,14 @@ export class CeresPlatformAccesory {
 
       callback(null, value);
     }).catch((e) => {
-      callback(new Error('Cannot get status'), null);
+      this.platform.log.error(`Cannot get coolingState on ${this.accessory.context.ip} with mode ${mode}: ${e}`);
+      callback(new Error(`Cannot get status: ${e}`), null);
     });
   }
 
   setAcCoolingState(value, callback: CharacteristicSetCallback) {
+    this.platform.log.debug(`Set AC Cooling state ${value}`);
+
     if (value === this.platform.Characteristic.TargetHeaterCoolerState.HEAT) {
       this.setAcVariable('mode', 'heat', callback);
     } else if (value === this.platform.Characteristic.TargetHeaterCoolerState.COOL) {

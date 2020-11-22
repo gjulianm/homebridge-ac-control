@@ -19,6 +19,7 @@ export class CeresHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly accessories: PlatformAccessory[] = [];
 
   private bonjour = bonjour();
+  private managedServices = {};
 
   constructor(
     public readonly log: Logger,
@@ -50,7 +51,13 @@ export class CeresHomebridgePlatform implements DynamicPlatformPlugin {
   }
 
   mdnsServiceUp(service) {
-    this.log.info('ceres-http service up: ', service);
+    if (this.managedServices[service.name]) {
+      this.log.info(`Service ${service.name} already managed, ignoring`);
+      return;
+    }
+
+    this.log.info(`ceres-http service up: ${service.name}, addresses ${service.addresses}`);
+    this.managedServices[service.name] = true;
 
     // generate a unique id for the accessory this should be generated from
     // something globally unique, but constant, for example, the device serial
@@ -71,6 +78,8 @@ export class CeresHomebridgePlatform implements DynamicPlatformPlugin {
       // create the accessory handler for the restored accessory
       // this is imported from `platformAccessory.ts`
       new CeresPlatformAccesory(this, existingAccessory);
+
+      this.api.updatePlatformAccessories([existingAccessory]);
     } else {
       const ip = service.addresses[0];
 
